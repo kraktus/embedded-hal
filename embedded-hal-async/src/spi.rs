@@ -276,32 +276,20 @@ unsafe impl<T: SpiDevice> SpiDevice for &mut T {
 
 /// Flush support for SPI bus
 pub trait SpiBusFlush: ErrorType {
-    /// Future returned by the `flush` method.
-    type FlushFuture<'a>: Future<Output = Result<(), Self::Error>>
-    where
-        Self: 'a;
-
     /// Wait until all operations have completed and the bus is idle.
     ///
     /// See (the docs on embedded-hal)[embedded_hal::spi::blocking] for information on flushing.
-    fn flush<'a>(&'a mut self) -> Self::FlushFuture<'a>;
+    async fn flush(&mut self) -> Result<(), Self::Error>;
 }
 
 impl<T: SpiBusFlush> SpiBusFlush for &mut T {
-    type FlushFuture<'a> = T::FlushFuture<'a> where Self: 'a;
-
-    fn flush<'a>(&'a mut self) -> Self::FlushFuture<'a> {
-        T::flush(self)
+    async fn flush(&mut self) -> Result<(), T::Error> {
+        T::flush(self).await
     }
 }
 
 /// Read-only SPI bus
 pub trait SpiBusRead<Word: 'static + Copy = u8>: SpiBusFlush {
-    /// Future returned by the `read` method.
-    type ReadFuture<'a>: Future<Output = Result<(), Self::Error>>
-    where
-        Self: 'a;
-
     /// Read `words` from the slave.
     ///
     /// The word value sent on MOSI during reading is implementation-defined,
@@ -309,36 +297,27 @@ pub trait SpiBusRead<Word: 'static + Copy = u8>: SpiBusFlush {
     ///
     /// Implementations are allowed to return before the operation is
     /// complete. See (the docs on embedded-hal)[embedded_hal::spi::blocking] for details on flushing.
-    fn read<'a>(&'a mut self, words: &'a mut [Word]) -> Self::ReadFuture<'a>;
+    async fn read(&mut self, words: &mut [Word]) -> Result<(), Self::Error>;
 }
 
 impl<T: SpiBusRead<Word>, Word: 'static + Copy> SpiBusRead<Word> for &mut T {
-    type ReadFuture<'a> = T::ReadFuture<'a> where Self: 'a;
-
-    fn read<'a>(&'a mut self, words: &'a mut [Word]) -> Self::ReadFuture<'a> {
-        T::read(self, words)
+    async fn read(&mut self, words: &mut [Word]) -> Result<(), T::Error> {
+        T::read(self, words).await
     }
 }
 
 /// Write-only SPI
 pub trait SpiBusWrite<Word: 'static + Copy = u8>: SpiBusFlush {
-    /// Future returned by the `write` method.
-    type WriteFuture<'a>: Future<Output = Result<(), Self::Error>>
-    where
-        Self: 'a;
-
     /// Write `words` to the slave, ignoring all the incoming words
     ///
     /// Implementations are allowed to return before the operation is
     /// complete. See (the docs on embedded-hal)[embedded_hal::spi::blocking] for details on flushing.
-    fn write<'a>(&'a mut self, words: &'a [Word]) -> Self::WriteFuture<'a>;
+    async fn write(&mut self, words: &[Word]) -> Result<(), Self::Error>;
 }
 
 impl<T: SpiBusWrite<Word>, Word: 'static + Copy> SpiBusWrite<Word> for &mut T {
-    type WriteFuture<'a> = T::WriteFuture<'a> where Self: 'a;
-
-    fn write<'a>(&'a mut self, words: &'a [Word]) -> Self::WriteFuture<'a> {
-        T::write(self, words)
+    async fn write<'a>(&'a mut self, words: &'a [Word]) -> Result<(), T::Error> {
+        T::write(self, words).await
     }
 }
 
@@ -348,11 +327,6 @@ impl<T: SpiBusWrite<Word>, Word: 'static + Copy> SpiBusWrite<Word> for &mut T {
 ///
 /// See (the docs on embedded-hal)[embedded_hal::spi::blocking] for important information on SPI Bus vs Device traits.
 pub trait SpiBus<Word: 'static + Copy = u8>: SpiBusRead<Word> + SpiBusWrite<Word> {
-    /// Future returned by the `transfer` method.
-    type TransferFuture<'a>: Future<Output = Result<(), Self::Error>>
-    where
-        Self: 'a;
-
     /// Write and read simultaneously. `write` is written to the slave on MOSI and
     /// words received on MISO are stored in `read`.
     ///
@@ -364,16 +338,11 @@ pub trait SpiBus<Word: 'static + Copy = u8>: SpiBusRead<Word> + SpiBusWrite<Word
     ///
     /// Implementations are allowed to return before the operation is
     /// complete. See (the docs on embedded-hal)[embedded_hal::spi::blocking] for details on flushing.
-    fn transfer<'a>(
+    async fn transfer<'a>(
         &'a mut self,
         read: &'a mut [Word],
         write: &'a [Word],
-    ) -> Self::TransferFuture<'a>;
-
-    /// Future returned by the `transfer_in_place` method.
-    type TransferInPlaceFuture<'a>: Future<Output = Result<(), Self::Error>>
-    where
-        Self: 'a;
+    ) -> Result<(), Self::Error>;
 
     /// Write and read simultaneously. The contents of `words` are
     /// written to the slave, and the received words are stored into the same
@@ -381,30 +350,20 @@ pub trait SpiBus<Word: 'static + Copy = u8>: SpiBusRead<Word> + SpiBusWrite<Word
     ///
     /// Implementations are allowed to return before the operation is
     /// complete. See (the docs on embedded-hal)[embedded_hal::spi::blocking] for details on flushing.
-    fn transfer_in_place<'a>(
-        &'a mut self,
-        words: &'a mut [Word],
-    ) -> Self::TransferInPlaceFuture<'a>;
+    async fn transfer_in_place<'a>(&'a mut self, words: &'a mut [Word]) -> Result<(), Self::Error>;
 }
 
 impl<T: SpiBus<Word>, Word: 'static + Copy> SpiBus<Word> for &mut T {
-    type TransferFuture<'a> = T::TransferFuture<'a> where Self: 'a;
-
-    fn transfer<'a>(
+    async fn transfer<'a>(
         &'a mut self,
         read: &'a mut [Word],
         write: &'a [Word],
-    ) -> Self::TransferFuture<'a> {
-        T::transfer(self, read, write)
+    ) -> Result<(), T::Error> {
+        T::transfer(self, read, write).await
     }
 
-    type TransferInPlaceFuture<'a> = T::TransferInPlaceFuture<'a> where Self: 'a;
-
-    fn transfer_in_place<'a>(
-        &'a mut self,
-        words: &'a mut [Word],
-    ) -> Self::TransferInPlaceFuture<'a> {
-        T::transfer_in_place(self, words)
+    async fn transfer_in_place<'a>(&'a mut self, words: &'a mut [Word]) -> Result<(), T::Error> {
+        T::transfer_in_place(self, words).await
     }
 }
 
